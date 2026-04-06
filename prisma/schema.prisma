@@ -1,0 +1,361 @@
+// =============================================================================
+// Hospedajes — modelo de datos (PMS)
+// Orden: enums → inventario → huéspedes/reservas → tarifas → facturación → bloqueos
+// =============================================================================
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// -----------------------------------------------------------------------------
+// Enums
+// -----------------------------------------------------------------------------
+
+enum RoomOperationalStatus {
+  AVAILABLE
+  OCCUPIED
+  CLEANING
+  OUT_OF_ORDER
+}
+
+enum ReservationStatus {
+  PENDING
+  CONFIRMED
+  CHECKED_IN
+  CHECKED_OUT
+  CANCELLED
+  NO_SHOW
+}
+
+enum ReservationChannel {
+  DIRECT
+  PHONE
+  EMAIL
+  WEB
+  OTA
+  WALK_IN
+  CORPORATE
+  OTHER
+}
+
+enum FolioStatus {
+  OPEN
+  CLOSED
+  VOID
+}
+
+enum ChargeCategory {
+  ACCOMMODATION
+  FOOD_BEVERAGE
+  SERVICE
+  TAX
+  FEE
+  DAMAGE
+  ADJUSTMENT
+  OTHER
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  BANK_TRANSFER
+  DIGITAL_WALLET
+  VOUCHER
+  OTHER
+}
+
+// -----------------------------------------------------------------------------
+// Establecimiento e inventario de habitaciones
+// -----------------------------------------------------------------------------
+
+model Property {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  legalName   String?  @map("legal_name")
+  taxId       String?  @map("tax_id")
+  email       String?
+  phone       String?
+  addressLine1 String  @map("address_line1")
+  addressLine2 String? @map("address_line2")
+  city        String
+  state       String?
+  postalCode  String?  @map("postal_code")
+  country     String   @db.Char(2)
+  timezone    String   @default("UTC")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  roomTypes    RoomType[]
+  rooms        Room[]
+  ratePlans    RatePlan[]
+  reservations Reservation[]
+
+  @@map("properties")
+}
+
+model RoomType {
+  id          String   @id @default(uuid()) @db.Uuid
+  propertyId  String   @map("property_id") @db.Uuid
+  name        String
+  description String?
+  maxAdults   Int      @default(2) @map("max_adults")
+  maxChildren Int      @default(0) @map("max_children")
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  rooms    Room[]
+  rates    Rate[]
+
+  @@index([propertyId])
+  @@map("room_types")
+}
+
+model Room {
+  id                  String                  @id @default(uuid()) @db.Uuid
+  propertyId          String                  @map("property_id") @db.Uuid
+  roomTypeId          String                  @map("room_type_id") @db.Uuid
+  number              String
+  floor               String?
+  operationalStatus   RoomOperationalStatus   @default(AVAILABLE) @map("operational_status")
+  notes               String?
+  createdAt           DateTime                @default(now()) @map("created_at")
+  updatedAt           DateTime                @updatedAt @map("updated_at")
+
+  property          Property           @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  roomType          RoomType           @relation(fields: [roomTypeId], references: [id], onDelete: Restrict)
+  reservationRooms  ReservationRoom[]
+  charges           Charge[]
+  roomBlocks        RoomBlock[]
+
+  @@unique([propertyId, number])
+  @@index([propertyId, operationalStatus])
+  @@index([roomTypeId])
+  @@map("rooms")
+}
+
+// -----------------------------------------------------------------------------
+// Huéspedes
+// -----------------------------------------------------------------------------
+
+model Guest {
+  id             String    @id @default(uuid()) @db.Uuid
+  firstName      String    @map("first_name")
+  lastName       String    @map("last_name")
+  email          String?
+  phone          String?
+  documentType   String?   @map("document_type")
+  documentNumber String?   @map("document_number")
+  nationality    String?   @db.Char(2)
+  birthDate      DateTime? @map("birth_date") @db.Date
+  notes          String?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  reservationGuests ReservationGuest[]
+
+  @@index([email])
+  @@index([documentNumber])
+  @@index([lastName, firstName])
+  @@map("guests")
+}
+
+// -----------------------------------------------------------------------------
+// Reservas y asignación de habitaciones
+// -----------------------------------------------------------------------------
+
+model Reservation {
+  id               String             @id @default(uuid()) @db.Uuid
+  propertyId       String             @map("property_id") @db.Uuid
+  publicCode       String             @unique @map("public_code")
+  status           ReservationStatus  @default(PENDING)
+  channel          ReservationChannel @default(DIRECT)
+
+  checkInDate      DateTime           @map("check_in_date") @db.Date
+  checkOutDate     DateTime           @map("check_out_date") @db.Date
+  actualCheckInAt  DateTime?          @map("actual_check_in_at")
+  actualCheckOutAt DateTime?          @map("actual_check_out_at")
+
+  adults           Int                @default(1)
+  children         Int                @default(0)
+
+  currency         String             @default("USD") @db.Char(3)
+  totalEstimated   Decimal?           @map("total_estimated") @db.Decimal(14, 2)
+
+  specialRequests  String?            @map("special_requests") @db.Text
+  internalNotes    String?            @map("internal_notes") @db.Text
+
+  cancelledAt         DateTime? @map("cancelled_at")
+  cancellationReason  String?   @map("cancellation_reason") @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  property           Property            @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  reservationGuests  ReservationGuest[]
+  reservationRooms   ReservationRoom[]
+  folio              Folio?
+
+  @@index([propertyId, status])
+  @@index([propertyId, checkInDate, checkOutDate])
+  @@index([checkInDate, checkOutDate])
+  @@map("reservations")
+}
+
+model ReservationGuest {
+  id            String  @id @default(uuid()) @db.Uuid
+  reservationId String  @map("reservation_id") @db.Uuid
+  guestId       String  @map("guest_id") @db.Uuid
+  isPrimary     Boolean @default(false) @map("is_primary")
+
+  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  guest       Guest       @relation(fields: [guestId], references: [id], onDelete: Restrict)
+
+  @@unique([reservationId, guestId])
+  @@index([guestId])
+  @@map("reservation_guests")
+}
+
+model ReservationRoom {
+  id            String   @id @default(uuid()) @db.Uuid
+  reservationId String   @map("reservation_id") @db.Uuid
+  roomId        String   @map("room_id") @db.Uuid
+
+  checkInDate  DateTime @map("check_in_date") @db.Date
+  checkOutDate DateTime @map("check_out_date") @db.Date
+
+  nightlyRate     Decimal? @map("nightly_rate") @db.Decimal(12, 2)
+  lineTotal       Decimal? @map("line_total") @db.Decimal(14, 2)
+  lineCurrency    String?  @map("line_currency") @db.Char(3)
+
+  assignedAt DateTime? @map("assigned_at")
+
+  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  room        Room        @relation(fields: [roomId], references: [id], onDelete: Restrict)
+
+  @@unique([reservationId, roomId])
+  @@index([roomId, checkInDate, checkOutDate])
+  @@map("reservation_rooms")
+}
+
+// -----------------------------------------------------------------------------
+// Tarifas (planes + precios por tipo de habitación y vigencia)
+// -----------------------------------------------------------------------------
+
+model RatePlan {
+  id          String   @id @default(uuid()) @db.Uuid
+  propertyId  String   @map("property_id") @db.Uuid
+  name        String
+  code        String
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  rates    Rate[]
+
+  @@unique([propertyId, code])
+  @@index([propertyId])
+  @@map("rate_plans")
+}
+
+model Rate {
+  id          String   @id @default(uuid()) @db.Uuid
+  ratePlanId  String   @map("rate_plan_id") @db.Uuid
+  roomTypeId  String   @map("room_type_id") @db.Uuid
+  validFrom   DateTime @map("valid_from") @db.Date
+  validTo     DateTime @map("valid_to") @db.Date
+  amount      Decimal  @db.Decimal(12, 2)
+  currency    String   @default("USD") @db.Char(3)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  ratePlan RatePlan @relation(fields: [ratePlanId], references: [id], onDelete: Cascade)
+  roomType RoomType @relation(fields: [roomTypeId], references: [id], onDelete: Cascade)
+
+  @@index([roomTypeId, validFrom, validTo])
+  @@index([ratePlanId])
+  @@map("rates")
+}
+
+// -----------------------------------------------------------------------------
+// Facturación (folio, cargos, pagos)
+// -----------------------------------------------------------------------------
+
+model Folio {
+  id            String      @id @default(uuid()) @db.Uuid
+  reservationId String      @unique @map("reservation_id") @db.Uuid
+  status        FolioStatus @default(OPEN)
+  currency      String      @default("USD") @db.Char(3)
+  openedAt      DateTime    @default(now()) @map("opened_at")
+  closedAt      DateTime?   @map("closed_at")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  charges     Charge[]
+  payments    Payment[]
+
+  @@index([status])
+  @@map("folios")
+}
+
+model Charge {
+  id          String         @id @default(uuid()) @db.Uuid
+  folioId     String         @map("folio_id") @db.Uuid
+  category    ChargeCategory
+  description String
+  quantity    Int            @default(1)
+  unitAmount  Decimal        @map("unit_amount") @db.Decimal(12, 2)
+  totalAmount Decimal        @map("total_amount") @db.Decimal(14, 2)
+  chargedAt   DateTime       @default(now()) @map("charged_at")
+  roomId      String?        @map("room_id") @db.Uuid
+
+  folio Folio @relation(fields: [folioId], references: [id], onDelete: Cascade)
+  room  Room? @relation(fields: [roomId], references: [id], onDelete: SetNull)
+
+  @@index([folioId])
+  @@index([roomId])
+  @@map("charges")
+}
+
+model Payment {
+  id        String        @id @default(uuid()) @db.Uuid
+  folioId   String        @map("folio_id") @db.Uuid
+  method    PaymentMethod
+  amount    Decimal       @db.Decimal(14, 2)
+  reference String?
+  paidAt    DateTime      @default(now()) @map("paid_at")
+  notes     String?
+
+  folio Folio @relation(fields: [folioId], references: [id], onDelete: Cascade)
+
+  @@index([folioId])
+  @@map("payments")
+}
+
+// -----------------------------------------------------------------------------
+// Bloqueos de habitación (mantenimiento, fuera de inventario temporal)
+// -----------------------------------------------------------------------------
+
+model RoomBlock {
+  id         String   @id @default(uuid()) @db.Uuid
+  roomId     String   @map("room_id") @db.Uuid
+  startDate  DateTime @map("start_date") @db.Date
+  endDate    DateTime @map("end_date") @db.Date
+  reason     String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@index([roomId, startDate, endDate])
+  @@map("room_blocks")
+}
