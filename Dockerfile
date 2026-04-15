@@ -25,7 +25,7 @@ FROM base AS development
 COPY package.json pnpm-lock.yaml ./
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 COPY . .
-EXPOSE 3000
+EXPOSE 3001
 CMD ["pnpm", "run", "start:dev"]
 
 # ---------- Imagen final ----------
@@ -33,5 +33,5 @@ FROM base
 COPY --from=prod-deps /app/node_modules /app/node_modules
 COPY --from=build /app/dist /app/dist
 
-EXPOSE 3000
+EXPOSE 3001
 CMD ["node", "dist/main.js"]

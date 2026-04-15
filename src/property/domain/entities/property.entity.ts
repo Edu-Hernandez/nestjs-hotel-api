@@ -92,4 +92,43 @@ export class Property {
       props.updatedAt,
     );
   }
+
+  withUpdates(patch: {
+    name?: string;
+    legalName?: string | null;
+    taxId?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    addressLine1?: string;
+    addressLine2?: string | null;
+    city?: string;
+    state?: string | null;
+    postalCode?: string | null;
+    country?: string;
+    timezone?: string;
+    isActive?: boolean;
+  }): Property {
+    const country =
+      patch.country !== undefined
+        ? patch.country.toUpperCase().slice(0, 2)
+        : this.country;
+    return new Property(
+      this.id,
+      patch.name ?? this.name,
+      patch.legalName !== undefined ? patch.legalName : this.legalName,
+      patch.taxId !== undefined ? patch.taxId : this.taxId,
+      patch.email !== undefined ? patch.email : this.email,
+      patch.phone !== undefined ? patch.phone : this.phone,
+      patch.addressLine1 ?? this.addressLine1,
+      patch.addressLine2 !== undefined ? patch.addressLine2 : this.addressLine2,
+      patch.city ?? this.city,
+      patch.state !== undefined ? patch.state : this.state,
+      patch.postalCode !== undefined ? patch.postalCode : this.postalCode,
+      country,
+      patch.timezone ?? this.timezone,
+      patch.isActive ?? this.isActive,
+      this.createdAt,
+      new Date(),
+    );
+  }
 }

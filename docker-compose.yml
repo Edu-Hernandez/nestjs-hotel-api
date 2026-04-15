@@ -4,11 +4,12 @@ services:
       context: .
       target: development
     ports:
-      - "3000:3000"
+      - "3001:3001"
     volumes:
       - .:/app
       - /app/node_modules
     environment:
+      PORT: "3001"
       DATABASE_URL: postgresql://postgres:postgres@db:5432/hotel
     depends_on:
       db:
